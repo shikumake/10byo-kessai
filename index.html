@@ -168,6 +168,7 @@
   .c-rank { font-weight: 800; font-size: 30px; white-space: nowrap; margin: 2px 0; }
   .c-rank.fatal { color: var(--red); }
   .c-say { font-family: var(--gothic); font-size: 12px; font-weight: 700; color: var(--ink-soft); line-height: 1.5; }
+  .ga-note { margin-top: 12px; font-family: var(--gothic); font-size: 10px; color: var(--ink-soft); }
   .r-clean { font-weight: 800; font-size: 17px; padding: 10px 0; }
   #toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #000; color: #fff; font-size: 13px; padding: 8px 16px; border-radius: 999px; z-index: 40; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.on { opacity: .9; }
@@ -209,6 +210,7 @@
         <div><span class="ico" style="background:var(--blue)">却下</span><span>ヤバい案は <b>スワイプ</b><small>横に払って突き返す</small></span></div>
       </div>
       <button class="btn" id="go">出社する</button>
+      <div class="ga-note" id="gaNote" hidden>利用状況の把握に Google アナリティクスを使っています</div>
     </div>
   </div>
 
@@ -256,10 +258,20 @@
   // 役職は正解率（%）で決まり、速さの言葉（爆速の・てきぱき・のんびり）は枚数で決まる
   const RANKS = [[35,'研修生'],[50,'平社員'],[60,'主任'],[70,'係長'],[78,'課長'],[84,'部長'],[90,'専務'],[Infinity,'社長']];
 
+  /* ---------- 計測（Google アナリティクス） ---------- */
+  const GA_ID = 'G-GMXHB6PGTD'; // 例: 'G-XXXXXXXXXX'。空のあいだは何も読み込まず、何も送らない
+  if (GA_ID) {
+    window.dataLayer = window.dataLayer || []; window.gtag = function () { dataLayer.push(arguments); };
+    gtag('js', new Date()); gtag('config', GA_ID);
+    const g = document.createElement('script'); g.async = true; g.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID; document.head.append(g);
+    document.addEventListener('DOMContentLoaded', () => { const n = document.getElementById('gaNote'); if (n) n.hidden = false; });
+  }
+  const track = (name, params) => { try { if (window.gtag) gtag('event', name, params || {}); } catch (e) {} };
+
   const $ = id => document.getElementById(id);
   const app = $('app'), desk = $('desk'), barFill = $('barFill'), countEl = $('count'), comboEl = $('combo');
   let state = 'title', queue = [], cur = null, next = null, startAt = 0, raf = 0, serial = 0;
-  let stats, rival = null;
+  let stats, rival = null, playNo = 0;
 
   /* ---------- 音 ---------- */
   let ac = null, muted = false;
@@ -342,7 +354,7 @@
     app.append(f); setTimeout(() => f.remove(), 620);
   };
   const judge = (approve, x, y) => {
-    if (state === 'ready') { state = 'play'; startAt = performance.now(); raf = requestAnimationFrame(tick); }
+    if (state === 'ready') { state = 'play'; startAt = performance.now(); raf = requestAnimationFrame(tick); track('game_start', { challenge: rival ? 'yes' : 'no', play_no: ++playNo }); }
     const doc = cur.doc, right = approve === doc.good;
     stats.total++; approve ? stats.approved++ : stats.rejected++;
     if (right) { stats.ok++; stats.combo++; stats.maxCombo = Math.max(stats.maxCombo, stats.combo); }
@@ -422,6 +434,7 @@
   };
   const showResult = () => {
     const v = stats.verdict = verdict(), card = $('result').querySelector('.card');
+    track('game_end', { rank_id: v.id, rank: v.rank, fatal: v.fatal ? 'yes' : 'no', total: stats.total, correct: stats.ok, challenge: rival ? 'yes' : 'no' });
     card.classList.toggle('fatal', v.fatal);
     $('rLabel').textContent = v.fatal ? '致命的な決裁' : 'あなたの決裁力';
     const r = $('rRank'); r.textContent = v.rank; r.style.fontSize = Math.min(42, 250 / v.rank.length) + 'px';
@@ -495,10 +508,10 @@
     const text = `10秒決裁の結果は【${v.rank}】。${v.say}\nあなたは何になる？ #10秒決裁`;
     return 'https://x.com/intent/post?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(BASE + 'r/' + v.id + '.html?c=' + encodeResult());
   };
-  $('share').addEventListener('click', () => { const url = shareUrl(); if (!window.open(url, '_blank')) location.href = url; });
+  $('share').addEventListener('click', () => { const url = shareUrl(); track('share', { method: 'X', rank_id: (stats.verdict || {}).id }); if (!window.open(url, '_blank')) location.href = url; });
   try { rival = decodeResult(new URLSearchParams(location.search).get('c')); } catch (e) {}
   if (rival) {
-    $('challenge').hidden = false;
+    $('challenge').hidden = false; track('challenge_open', { rival_rank_id: rival.v.id });
     const cr = $('cRank'); cr.textContent = rival.v.rank; cr.classList.toggle('fatal', rival.v.fatal); cr.style.fontSize = Math.min(30, 250 / rival.v.rank.length) + 'px';
     $('cSay').textContent = rival.v.say;
     $('sub').textContent = 'あなたは何になる？'; $('go').textContent = '受けて立つ';
