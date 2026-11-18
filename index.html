@@ -10,7 +10,9 @@
 <meta property="og:description" content="10秒で稟議書をさばけ。いい案は承認、ヤバい案は却下。あなたの決裁力は？">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://shikumake.github.io/10byo-kessai/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://shikumake.github.io/10byo-kessai/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shikumake.github.io/10byo-kessai/ogp.png">
 <style>
   :root {
     --mat: #1d5a48;
@@ -159,6 +161,13 @@
   @keyframes fatal { 15% { transform: translateX(-10px) rotate(-1deg) } 35% { transform: translateX(9px) rotate(1deg) } 55% { transform: translateX(-6px) } 75% { transform: translateX(4px) } }
   .r-worst.rej h3 { color: var(--blue); }
   .r-worst.rej li::after { border-color: var(--blue); color: var(--blue); border-radius: 4px; }
+  .r-rival { margin-top: 8px; font-family: var(--gothic); font-size: 12px; font-weight: 700; color: var(--blue); }
+  .challenge { position: relative; border: 2px solid var(--red); background: rgba(211,40,28,.05); padding: 16px 10px 12px; margin-bottom: 18px; }
+  .c-tag { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: var(--red); color: #fff; font-family: var(--gothic); font-weight: 800; font-size: 12px; letter-spacing: .3em; padding: 2px 9px 2px 13px; white-space: nowrap; }
+  .c-who { font-size: 12px; color: var(--ink-soft); letter-spacing: .15em; }
+  .c-rank { font-weight: 800; font-size: 30px; white-space: nowrap; margin: 2px 0; }
+  .c-rank.fatal { color: var(--red); }
+  .c-say { font-family: var(--gothic); font-size: 12px; font-weight: 700; color: var(--ink-soft); line-height: 1.5; }
   .r-clean { font-weight: 800; font-size: 17px; padding: 10px 0; }
   #toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #000; color: #fff; font-size: 13px; padding: 8px 16px; border-radius: 999px; z-index: 40; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.on { opacity: .9; }
@@ -192,8 +201,9 @@
 
   <div class="overlay" id="start">
     <div class="card">
+      <div class="challenge" id="challenge" hidden><span class="c-tag">挑戦状</span><div class="c-who">シェアした人の結果</div><div class="c-rank" id="cRank"></div><div class="c-say" id="cSay"></div></div>
       <div class="logo">10秒<em>決裁</em></div>
-      <div class="sub">あなたは今日から部長です</div>
+      <div class="sub" id="sub">あなたは今日から部長です</div>
       <div class="rules">
         <div><span class="ico" style="background:var(--red)">承認</span><span>いい案は <b>タップ</b><small>ハンコを押して通す</small></span></div>
         <div><span class="ico" style="background:var(--blue)">却下</span><span>ヤバい案は <b>スワイプ</b><small>横に払って突き返す</small></span></div>
@@ -207,6 +217,7 @@
       <div class="r-label" id="rLabel">あなたの決裁力</div>
       <div class="r-rank" id="rRank"></div>
       <div class="r-say" id="rSay"></div>
+      <div class="r-rival" id="rRival" hidden></div>
       <div class="r-stats">
         <div><b id="rTotal">0</b><span>さばいた枚数</span></div>
         <div><b id="rOk">0</b><span>正しい判断</span></div>
@@ -214,7 +225,7 @@
       </div>
       <div class="r-worst" id="rWorst"></div>
       <div class="btns">
-        <button class="btn ghost" id="share">シェア</button>
+        <button class="btn ghost" id="share">Xでシェア</button>
         <button class="btn" id="again">もう一回</button>
       </div>
     </div>
@@ -247,7 +258,7 @@
   const $ = id => document.getElementById(id);
   const app = $('app'), desk = $('desk'), barFill = $('barFill'), countEl = $('count'), comboEl = $('combo');
   let state = 'title', queue = [], cur = null, next = null, startAt = 0, raf = 0, serial = 0;
-  let stats;
+  let stats, rival = null;
 
   /* ---------- 音 ---------- */
   let ac = null, muted = false;
@@ -374,8 +385,8 @@
     const b = $('banner'); b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
     setTimeout(showResult, 950);
   };
-  const verdict = () => {
-    const s = stats, wrong = s.total - s.ok, bad = s.badApproved.length, rej = s.goodRejected.length, pct = s.total ? Math.round(s.ok / s.total * 100) : 0;
+  const verdict = (s = stats) => {
+    const wrong = s.total - s.ok, bad = s.badApproved.length, rej = s.goodRejected.length, pct = s.total ? Math.round(s.ok / s.total * 100) : 0;
     const sp = (rank, say) => ({ rank, say, fatal: false });
     if (s.fatal.length) return { rank: s.fatal[0].fatal.rank, say: `「${s.fatal[0].t}」を承認。${s.fatal[0].fatal.say}`, fatal: true };
     if (!s.total) return sp('置物', '1枚も決裁しませんでした。');
@@ -412,6 +423,7 @@
     $('rLabel').textContent = v.fatal ? '致命的な決裁' : 'あなたの決裁力';
     const r = $('rRank'); r.textContent = v.rank; r.style.fontSize = Math.min(42, 250 / v.rank.length) + 'px';
     $('rSay').textContent = v.say;
+    if (rival) { const rr = $('rRival'); rr.hidden = false; rr.textContent = `挑戦相手は【${rival.v.rank}】（${rival.total}枚中${rival.ok}枚が正解）`; }
     $('rTotal').textContent = stats.total; $('rOk').textContent = stats.ok; $('rCombo').textContent = stats.maxCombo;
     const w = $('rWorst'), l = worstList(); w.innerHTML = ''; w.className = 'r-worst ' + (l.kind || '');
     if (l.items.length) {
@@ -464,60 +476,30 @@
   $('again').addEventListener('click', () => { audio(); $('result').classList.add('hide'); reset(); });
   $('mute').addEventListener('click', () => { muted = !muted; $('mute').textContent = muted ? '×' : '♪'; });
   const toast = t => { const el = $('toast'); el.textContent = t; el.classList.add('on'); setTimeout(() => el.classList.remove('on'), 1600); };
-  /* ---------- シェア用の画像 ---------- */
-  const drawShareImage = () => {
-    const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
-    const x = c.getContext('2d'), MIN = '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif', GO = '"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif';
-    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#1d5a48'); g.addColorStop(1, '#123c30'); x.fillStyle = g; x.fillRect(0, 0, W, H);
-    x.strokeStyle = 'rgba(255,255,255,.07)'; x.lineWidth = 2;
-    for (let i = 0; i <= W; i += 60) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); }
-    for (let i = 0; i <= H; i += 60) { x.beginPath(); x.moveTo(0, i); x.lineTo(W, i); x.stroke(); }
-    x.save(); x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 50; x.shadowOffsetY = 24; x.fillStyle = '#fbfaf4'; x.fillRect(90, 100, 900, 1150); x.restore();
-    x.textAlign = 'center'; x.textBaseline = 'alphabetic';
-    // 見出し
-    x.font = `800 56px ${MIN}`; const w1 = x.measureText('10秒').width, w2 = x.measureText('決裁').width, sx = 540 - (w1 + w2) / 2;
-    x.textAlign = 'left'; x.fillStyle = '#23211d'; x.fillText('10秒', sx, 200); x.fillStyle = '#d3281c'; x.fillText('決裁', sx + w1, 200);
-    x.textAlign = 'center'; x.fillStyle = '#23211d'; x.fillRect(150, 230, 780, 3); x.fillRect(150, 238, 780, 1);
-    const v = stats.verdict || verdict(), l = worstList(), RED = '#d3281c', BLUE = '#2b4c8c', mc = l.kind === 'rej' ? BLUE : RED;
-    x.fillStyle = v.fatal ? RED : '#8d8a80'; x.font = `${v.fatal ? 800 : 400} 34px ${MIN}`; x.fillText(v.fatal ? '致 命 的 な 決 裁' : 'あ な た の 決 裁 力', 540, 315);
-    let rs = 132; x.font = `800 ${rs}px ${MIN}`; while (x.measureText(v.rank).width > 760 && rs > 50) { rs -= 4; x.font = `800 ${rs}px ${MIN}`; }
-    x.fillStyle = v.fatal ? RED : '#23211d'; x.fillText(v.rank, 540, 450);
-    let ss = 30; x.font = `700 ${ss}px ${GO}`; while (x.measureText(v.say).width > 780 && ss > 20) { ss -= 1; x.font = `700 ${ss}px ${GO}`; }
-    x.fillStyle = v.fatal ? '#23211d' : '#8d8a80'; x.fillText(v.say, 540, 508);
-    // 数字
-    x.fillStyle = '#d9d5c8'; x.fillRect(150, 545, 780, 2); x.fillRect(150, 735, 780, 2); x.fillRect(410, 545, 2, 190); x.fillRect(670, 545, 2, 190);
-    [[stats.total, 'さばいた枚数'], [stats.ok, '正しい判断'], [stats.maxCombo, '最大連続']].forEach(([n, lb], i) => {
-      const cx = 280 + i * 260; x.fillStyle = '#23211d'; x.font = `800 92px ${GO}`; x.fillText(n, cx, 660); x.fillStyle = '#8d8a80'; x.font = `400 28px ${MIN}`; x.fillText(lb, cx, 710);
-    });
-    // 通した最悪の案／つぶした良案
-    if (l.items.length) {
-      x.textAlign = 'left'; x.fillStyle = mc; x.font = `800 34px ${GO}`; x.fillText(l.title, 150, 810);
-      l.items.forEach((t, i) => {
-        const y = 838 + i * 122; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(150, y, 780, 104); x.strokeStyle = '#d9d5c8'; x.lineWidth = 2; x.strokeRect(150, y, 780, 104);
-        x.fillStyle = '#23211d'; x.textAlign = 'left'; let fs = 50; x.font = `800 ${fs}px ${MIN}`; while (x.measureText(t).width > 610 && fs > 30) { fs -= 2; x.font = `800 ${fs}px ${MIN}`; } x.fillText(t, 180, y + 70);
-        x.save(); x.translate(868, y + 52); x.rotate(-.21); x.strokeStyle = mc; x.fillStyle = mc; x.lineWidth = 5; x.globalAlpha = .9;
-        x.beginPath(); if (l.kind === 'rej') x.rect(-42, -34, 84, 68); else x.arc(0, 0, 42, 0, Math.PI * 2); x.stroke(); x.textAlign = 'center'; x.font = `800 26px ${MIN}`; x.fillText(l.mark, 0, 10); x.restore();
-      });
-    } else {
-      x.textAlign = 'center'; x.fillStyle = '#23211d'; x.font = `800 50px ${MIN}`;
-      x.fillText(stats.total ? 'ひとつも' : '書類は', 540, 920); x.fillText(stats.total ? '間違えませんでした。' : '手つかずです。', 540, 995);
-    }
-    x.textAlign = 'center'; x.fillStyle = '#fff'; x.globalAlpha = .85; x.font = `700 34px ${GO}`; x.fillText('#10秒決裁', 540, 1310); x.globalAlpha = 1;
-    return c;
+  /* ---------- Xでシェア・挑戦状 ---------- */
+  // 結果は数字だけをリンクに載せる（文字は載せないので、好きな文を表示させることはできない）
+  const BASE = 'https://shikumake.github.io/10byo-kessai/';
+  const encodeResult = () => [stats.total, stats.ok, stats.approved, stats.rejected, stats.badApproved.length, stats.goodRejected.length, stats.fatal.length ? FATAL.indexOf(stats.fatal[0].fatal) + 1 : 0].join('.');
+  const decodeResult = code => {
+    const n = String(code || '').split('.').map(Number);
+    if (n.length !== 7 || n.some(v => !Number.isInteger(v) || v < 0 || v > 99)) return null;
+    const [total, ok, approved, rejected, bad, rej, f] = n;
+    if (ok > total || approved + rejected !== total || f > FATAL.length) return null;
+    return { total, ok, v: verdict({ total, ok, approved, rejected, badApproved: Array(bad), goodRejected: Array(rej), fatal: f ? [{ t: FATAL[f - 1].t, fatal: FATAL[f - 1] }] : [] }) };
   };
-  $('share').addEventListener('click', async () => {
-    const v = stats.verdict || verdict(), l = worstList();
-    let text = `10秒決裁の結果は【${v.rank}】。${v.say}`;
-    if (l.items.length && !v.fatal) text += `「${l.items[0]}」を${l.mark}してしまった。`;
-    text += ' #10秒決裁 https://shikumake.github.io/10byo-kessai/';
-    try {
-      const blob = await new Promise(r => drawShareImage().toBlob(r, 'image/png'));
-      const file = new File([blob], '10byo-kessai.png', { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) return await navigator.share({ files: [file], text });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-      try { await navigator.clipboard.writeText(text); toast('画像を保存し、文をコピーしました'); } catch (e) { toast('画像を保存しました'); }
-    } catch (e) {}
-  });
+  const shareUrl = () => {
+    const v = stats.verdict || verdict();
+    const text = `10秒決裁の結果は【${v.rank}】。${v.say}\nあなたは何になる？ #10秒決裁`;
+    return 'https://x.com/intent/post?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(BASE + '?c=' + encodeResult());
+  };
+  $('share').addEventListener('click', () => { const url = shareUrl(); if (!window.open(url, '_blank')) location.href = url; });
+  try { rival = decodeResult(new URLSearchParams(location.search).get('c')); } catch (e) {}
+  if (rival) {
+    $('challenge').hidden = false;
+    const cr = $('cRank'); cr.textContent = rival.v.rank; cr.classList.toggle('fatal', rival.v.fatal); cr.style.fontSize = Math.min(30, 250 / rival.v.rank.length) + 'px';
+    $('cSay').textContent = rival.v.say;
+    $('sub').textContent = 'あなたは何になる？'; $('go').textContent = '受けて立つ';
+  }
 
   // タイトルの後ろに書類を見せておく
   stats = newStats();
