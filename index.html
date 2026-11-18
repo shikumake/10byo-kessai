@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>10秒決裁</title>
+<meta name="description" content="10秒で稟議書をさばくゲーム。いい案はタップで承認、ヤバい案はスワイプで却下。">
+<meta name="theme-color" content="#123c30">
+<meta property="og:title" content="10秒決裁">
+<meta property="og:description" content="10秒で稟議書をさばけ。いい案は承認、ヤバい案は却下。あなたの決裁力は？">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://shikumake.github.io/10byo-kessai/">
+<meta name="twitter:card" content="summary">
+<style>
+  :root {
+    --mat: #1d5a48;
+    --mat-dark: #123c30;
+    --paper: #fbfaf4;
+    --ink: #23211d;
+    --ink-soft: #8d8a80;
+    --red: #d3281c;
+    --blue: #2b4c8c;
+    --gold: #f2c14e;
+    --mincho: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
+    --gothic: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0c0d0c; overflow: hidden; overscroll-behavior: none; }
+  body { font-family: var(--gothic); color: var(--ink); user-select: none; -webkit-user-select: none; touch-action: none; }
+
+  #app {
+    position: relative; height: 100dvh; max-width: 480px; margin: 0 auto; overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.55) 100%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 8px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 8px),
+      linear-gradient(160deg, var(--mat), var(--mat-dark));
+  }
+  #app::after { /* 机の表面のざらつき */
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .22; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  #app.shake { animation: shake .28s; }
+  @keyframes shake { 20% { transform: translateX(-9px) } 40% { transform: translateX(8px) } 60% { transform: translateX(-5px) } 80% { transform: translateX(3px) } }
+  #flash { position: absolute; inset: 0; background: var(--red); opacity: 0; pointer-events: none; z-index: 20; }
+  #flash.on { animation: flash .3s; }
+  @keyframes flash { 0% { opacity: .45 } 100% { opacity: 0 } }
+
+  /* 上の表示 */
+  #hud { position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: calc(env(safe-area-inset-top) + 14px) 18px 0; color: #fff; }
+  #bar { height: 10px; border-radius: 6px; background: rgba(0,0,0,.35); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.5); }
+  #barFill { height: 100%; width: 100%; background: linear-gradient(90deg, var(--gold), #fff3c4); transform-origin: left; border-radius: 6px; }
+  #barFill.hurry { background: linear-gradient(90deg, #ff5a3c, #ffb199); }
+  #hudRow { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; }
+  #count { font-family: var(--mincho); font-weight: 700; font-size: 44px; line-height: 1; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
+  #count small { font-size: 16px; margin-left: 4px; opacity: .85; }
+  #count.pop { animation: pop .16s; }
+  @keyframes pop { 50% { transform: scale(1.25) } }
+  #combo { font-weight: 800; font-size: 18px; color: var(--gold); opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
+  #combo.on { opacity: 1; transform: none; }
+  #combo.fever { color: #fff; text-shadow: 0 0 12px var(--gold), 0 0 24px #ff7a00; }
+  #mute { position: absolute; right: 14px; top: calc(env(safe-area-inset-top) + 78px); width: 38px; height: 38px; border-radius: 50%; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 17px; z-index: 11; }
+
+  /* 書類 */
+  #desk { position: absolute; inset: 0; z-index: 5; }
+  .paper {
+    position: absolute; left: 50%; top: 54%; width: 76%; aspect-ratio: 1 / 1.32;
+    margin-left: -38%; transform: translateY(-50%) rotate(var(--r, 0deg));
+    background-color: var(--paper);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .35 0 0 0 0 .25 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 2px 3px rgba(0,0,0,.25), 0 14px 28px rgba(0,0,0,.35);
+    padding: 7% 8% 6%; display: flex; flex-direction: column; will-change: transform;
+    font-family: var(--mincho);
+  }
+  .paper.next { transform: translateY(calc(-50% + 12px)) scale(.955) rotate(var(--r, 0deg)); filter: brightness(.93); }
+  .paper.cur { transition: transform .12s ease-out, filter .12s; z-index: 2; }
+  .paper.drag { transition: none; }
+  .paper.fly { z-index: 3; pointer-events: none; transition: transform .38s cubic-bezier(.5,0,.9,.4), opacity .38s; }
+  .p-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--ink-soft); font-size: 11px; letter-spacing: .1em; }
+  .p-title { text-align: center; font-size: 19px; letter-spacing: .6em; text-indent: .6em; margin: 5% 0 3%; font-weight: 700; }
+  .p-rule { height: 3px; border-top: 1.5px solid var(--ink); border-bottom: .5px solid var(--ink); }
+  .p-label { margin-top: 7%; font-size: 11px; color: var(--ink-soft); letter-spacing: .3em; }
+  .p-subject { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
+    font-weight: 800; font-size: clamp(25px, 8.2vw, 38px); line-height: 1.3; padding: 0 2%; flex-wrap: wrap; align-content: center; }
+  .p-subject span { display: inline-block; white-space: nowrap; }
+  .p-lines { display: grid; gap: 7px; margin-bottom: 7%; }
+  .p-lines i { height: 4px; border-radius: 2px; background: #dedbd0; }
+  .p-lines i:nth-child(2) { width: 88%; } .p-lines i:nth-child(3) { width: 55%; }
+  .p-foot { display: flex; justify-content: flex-end; }
+  .p-cells { display: grid; grid-template-columns: repeat(3, 44px); border: 1px solid var(--ink-soft); }
+  .p-cells span { height: 48px; border-left: 1px solid var(--ink-soft); font-size: 9px; color: var(--ink-soft); text-align: center; padding-top: 2px; border-bottom: 0; }
+  .p-cells span:first-child { border-left: 0; }
+  .p-cells span::after { content: ""; display: block; border-top: 1px solid var(--ink-soft); margin-top: 2px; }
+
+  .stamp { position: absolute; width: 38%; aspect-ratio: 1; margin: -19% 0 0 -19%; pointer-events: none; filter: url(#ink); mix-blend-mode: multiply;
+    animation: stamp .13s cubic-bezier(.2,.9,.3,1.2) both; }
+  @keyframes stamp { 0% { transform: rotate(var(--sr)) scale(2.4); opacity: 0 } 100% { transform: rotate(var(--sr)) scale(1); opacity: .93 } }
+  .stamp svg { width: 100%; height: 100%; display: block; }
+  .reject { position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%) rotate(-9deg); border: 4px solid var(--blue); color: var(--blue);
+    font-family: var(--mincho); font-weight: 800; font-size: 34px; letter-spacing: .3em; text-indent: .3em; padding: 2px 10px; opacity: 0; pointer-events: none; filter: url(#ink); mix-blend-mode: multiply; }
+
+  .float { position: absolute; z-index: 9; font-weight: 800; font-size: 22px; pointer-events: none; text-shadow: 0 2px 0 rgba(0,0,0,.4); animation: float .6s ease-out forwards; }
+  @keyframes float { 0% { opacity: 0; transform: translate(-50%, 0) scale(.6) } 20% { opacity: 1; transform: translate(-50%, -14px) scale(1.1) } 100% { opacity: 0; transform: translate(-50%, -60px) scale(1) } }
+
+  #hint { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 18px); z-index: 6; display: flex; justify-content: center; gap: 10px; color: #fff; font-size: 13px; font-weight: 700; pointer-events: none; }
+  #hint span { background: rgba(0,0,0,.35); border-radius: 999px; padding: 7px 14px; }
+  #hint b { color: var(--gold); }
+
+  /* 重なる画面 */
+  .overlay { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; background: rgba(8,22,18,.78); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); transition: opacity .25s; }
+  .overlay.hide { opacity: 0; pointer-events: none; }
+  .card { width: 100%; max-width: 360px; background-color: var(--paper); border-radius: 4px; padding: 26px 22px 22px; box-shadow: 0 20px 50px rgba(0,0,0,.5); font-family: var(--mincho); text-align: center; position: relative;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .35 0 0 0 0 .25 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .overlay:not(.hide) .card { animation: cardIn .35s cubic-bezier(.2,.9,.3,1.15) both; }
+  @keyframes cardIn { from { transform: translateY(30px) scale(.94); opacity: 0 } }
+  .logo { font-size: 46px; font-weight: 800; letter-spacing: .08em; line-height: 1.1; }
+  .logo em { font-style: normal; color: var(--red); }
+  .sub { color: var(--ink-soft); font-size: 13px; letter-spacing: .2em; margin-top: 8px; }
+  .rules { margin: 22px 0; display: grid; gap: 10px; font-family: var(--gothic); font-size: 15px; font-weight: 700; text-align: left; }
+  .rules div { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #d9d5c8; background: rgba(255,255,255,.5); }
+  .rules .ico { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 13px; font-family: var(--mincho); }
+  .rules small { display: block; font-weight: 500; color: var(--ink-soft); font-size: 12px; margin-top: 2px; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 4px; padding: 16px; font-family: var(--gothic); font-size: 17px; font-weight: 800; letter-spacing: .15em; color: #fff; background: var(--red); box-shadow: 0 4px 0 #8f1810; }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #8f1810; }
+  .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+  .btn.ghost:active { transform: translateY(1px); box-shadow: inset 0 0 0 1.5px var(--ink); }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+
+  #banner { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; pointer-events: none; opacity: 0; background: rgba(6,18,14,.72); }
+  #banner.on { animation: banner .9s both; }
+  #banner span { font-family: var(--mincho); font-weight: 800; font-size: 72px; color: #fff; letter-spacing: .1em; text-shadow: 0 4px 0 var(--red), 0 10px 30px rgba(0,0,0,.6); }
+  @keyframes banner { 0% { opacity: 0 } 18% { opacity: 1 } 85% { opacity: 1 } 100% { opacity: 0 } }
+  #banner.on span { animation: bannerText .9s both; }
+  @keyframes bannerText { 0% { transform: scale(2.2) } 18% { transform: scale(1) } }
+
+  .r-label { font-size: 12px; letter-spacing: .3em; color: var(--ink-soft); }
+  .r-rank { font-size: 42px; font-weight: 800; margin: 4px 0 2px; letter-spacing: .08em; }
+  .r-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #d9d5c8; border-bottom: 1px solid #d9d5c8; margin: 14px 0; }
+  .r-stats div { padding: 10px 0; border-left: 1px solid #d9d5c8; }
+  .r-stats div:first-child { border-left: 0; }
+  .r-stats b { display: block; font-size: 26px; font-family: var(--gothic); }
+  .r-stats span { font-size: 11px; color: var(--ink-soft); letter-spacing: .1em; }
+  .r-worst { text-align: left; }
+  .r-worst h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .15em; color: var(--red); font-family: var(--gothic); }
+  .r-worst ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .r-worst li { position: relative; padding: 9px 56px 9px 12px; background: rgba(255,255,255,.6); border: 1px solid #d9d5c8; font-weight: 800; font-size: 17px; }
+  .r-worst li::after { content: attr(data-mark); position: absolute; right: 8px; top: 50%; width: 36px; height: 36px; margin-top: -18px; border: 2px solid var(--red); border-radius: 50%; color: var(--red); font-size: 12px; display: grid; place-items: center; transform: rotate(-12deg); filter: url(#ink); }
+  .r-worst li { animation: li .3s both; }
+  .r-worst li:nth-child(2) { animation-delay: .15s } .r-worst li:nth-child(3) { animation-delay: .3s }
+  @keyframes li { from { opacity: 0; transform: translateX(-14px) } }
+  .r-say { font-family: var(--gothic); font-size: 13px; font-weight: 700; color: var(--ink-soft); line-height: 1.5; }
+  .r-rank { white-space: nowrap; }
+  .card.fatal .r-label { color: var(--red); font-weight: 800; }
+  .card.fatal .r-rank { color: var(--red); }
+  .card.fatal .r-say { color: var(--ink); }
+  .overlay:not(.hide) .card.fatal { animation: cardIn .35s cubic-bezier(.2,.9,.3,1.15) both, fatal .5s .35s; }
+  @keyframes fatal { 15% { transform: translateX(-10px) rotate(-1deg) } 35% { transform: translateX(9px) rotate(1deg) } 55% { transform: translateX(-6px) } 75% { transform: translateX(4px) } }
+  .r-worst.rej h3 { color: var(--blue); }
+  .r-worst.rej li::after { border-color: var(--blue); color: var(--blue); border-radius: 4px; }
+  .r-clean { font-weight: 800; font-size: 17px; padding: 10px 0; }
+  #toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #000; color: #fff; font-size: 13px; padding: 8px 16px; border-radius: 999px; z-index: 40; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: .9; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="ink" x="-10%" y="-10%" width="120%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="4" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -3.2 2.45" result="m"/>
+    <feComposite in="SourceGraphic" in2="m" operator="in" result="c"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="9" result="w"/>
+    <feDisplacementMap in="c" in2="w" scale="2.5"/>
+  </filter>
+</svg>
+
+<div id="app">
+  <div id="hud">
+    <div id="bar"><div id="barFill"></div></div>
+    <div id="hudRow">
+      <div id="count">0<small>枚</small></div>
+      <div id="combo"></div>
+    </div>
+  </div>
+  <button id="mute" aria-label="音の切り替え">♪</button>
+
+  <div id="desk"></div>
+  <div id="hint"><span><b>タップ</b> 承認</span><span><b>スワイプ</b> 却下</span></div>
+  <div id="flash"></div>
+  <div id="banner"><span>定時！</span></div>
+
+  <div class="overlay" id="start">
+    <div class="card">
+      <div class="logo">10秒<em>決裁</em></div>
+      <div class="sub">あなたは今日から部長です</div>
+      <div class="rules">
+        <div><span class="ico" style="background:var(--red)">承認</span><span>いい案は <b>タップ</b><small>ハンコを押して通す</small></span></div>
+        <div><span class="ico" style="background:var(--blue)">却下</span><span>ヤバい案は <b>スワイプ</b><small>横に払って突き返す</small></span></div>
+      </div>
+      <button class="btn" id="go">出社する</button>
+    </div>
+  </div>
+
+  <div class="overlay hide" id="result">
+    <div class="card">
+      <div class="r-label" id="rLabel">あなたの決裁力</div>
+      <div class="r-rank" id="rRank"></div>
+      <div class="r-say" id="rSay"></div>
+      <div class="r-stats">
+        <div><b id="rTotal">0</b><span>さばいた枚数</span></div>
+        <div><b id="rOk">0</b><span>正しい判断</span></div>
+        <div><b id="rCombo">0</b><span>最大連続</span></div>
+      </div>
+      <div class="r-worst" id="rWorst"></div>
+      <div class="btns">
+        <button class="btn ghost" id="share">シェア</button>
+        <button class="btn" id="again">もう一回</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<script>
+(() => {
+  const TIME = 10000;
+  const GOOD = ['給料を2倍にする','週休3日にする','有給を無限にする','昼寝を義務にする','おやつを支給する','会議を5分にする','金曜を休みにする','残業を禁止する','ボーナスを毎月出す','始業を昼からにする','社食を無料にする','椅子を高級にする','猫を社員にする','夏休みを1か月にする','朝礼を廃止する','定時を15時にする','給料を3倍にする','有給を倍にする','会議を廃止する','通勤を廃止する','残業代を2倍にする','昼休みを2時間にする','始業を10時にする','犬を部長にする','おやつを無料にする','月曜を休みにする','冷房を強くする','椅子をソファにする','出張をハワイにする','朝礼を1分にする','ノルマを廃止する','定時を14時にする','社食を寿司にする','ボーナスを倍にする','休憩を増やす','机を広くする','飲み会を自由参加にする','満員電車を禁止する','冬休みを1か月にする','報告書を1行にする'];
+  const BAD = ['給料を半分にする','月曜を週2回にする','有給を廃止する','残業を無限にする','会議を8時間にする','昼休みを5分にする','始業を朝4時にする','ボーナスを石にする','休日を出勤日にする','冷房を禁止する','椅子を撤去する','トイレを有料にする','給料をどんぐりで払う','正月を出勤にする','朝礼を3時間にする','通勤を徒歩限定にする','給料を1割にする','有給を没収する','会議を毎日にする','残業を義務にする','昼休みを廃止する','始業を朝5時にする','休日を廃止する','ボーナスを廃止する','暖房を禁止する','椅子を石にする','トイレを1日1回にする','給料を拍手で払う','定時を深夜にする','朝礼を毎時にする','通勤を逆立ちにする','出張を徒歩にする','社食を草にする','机を撤去する','ノルマを10倍にする','金曜を月曜にする','夏休みを1秒にする','残業代を0円にする','報告書を毎分出す','社長を5人にする','飲み会を強制にする'];
+  // 致命的な案：通したら枚数に関係なく専用の称号になる
+  const FATAL = [
+    { t: '会社を爆破する', rank: '爆破犯', say: '会社がなくなりました。' },
+    { t: '社長をクビにする', rank: '下剋上', say: '明日から来なくていいそうです。' },
+    { t: '全員を解雇する', rank: 'ひとり会社', say: 'オフィスが静かになりました。' },
+    { t: '会社を1円で売る', rank: '1円部長', say: 'おつりは出ません。' },
+    { t: '自分を解雇する', rank: '無職', say: '部長は10秒で終わりました。' },
+    { t: '会社をたたむ', rank: '倒産', say: '全員、解散です。' },
+    { t: '本社を月に移す', rank: '月面支社長', say: '通勤は片道3日です。' },
+    { t: '社員を全員猫にする', rank: '猫の下僕', say: '誰も働かなくなりました。' },
+    { t: '退職金を廃止する', rank: '老後の敵', say: '全社員に恨まれています。' },
+    { t: '給料を社長に渡す', rank: '社長の財布', say: '今月の手取りは0円です。' },
+    { t: '社名をうんこにする', rank: 'うんこ(株)部長', say: '名刺を刷り直してください。' },
+    { t: '機密を全部公開する', rank: '情報漏えい', say: 'ニュースになりました。' }
+  ];
+  const RANKS = [[3,'研修生'],[6,'平社員'],[9,'主任'],[12,'係長'],[15,'課長'],[18,'部長'],[22,'専務'],[Infinity,'社長']];
+
+  const $ = id => document.getElementById(id);
+  const app = $('app'), desk = $('desk'), barFill = $('barFill'), countEl = $('count'), comboEl = $('combo');
+  let state = 'title', queue = [], cur = null, next = null, startAt = 0, raf = 0, serial = 0;
+  let stats;
+
+  /* ---------- 音 ---------- */
+  let ac = null, muted = false;
+  const audio = () => { if (!ac) { const A = window.AudioContext || window.webkitAudioContext; if (A) ac = new A(); } if (ac && ac.state === 'suspended') ac.resume(); };
+  const noise = (dur) => { const b = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; const s = ac.createBufferSource(); s.buffer = b; return s; };
+  const env = (g, t, peak, dur) => { g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur); };
+  const sfx = {
+    stamp(combo) {
+      const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(48, t + .12); env(g, t, .7, .16);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + .17);
+      const n = noise(.05), f = ac.createBiquadFilter(), g2 = ac.createGain(); f.type = 'lowpass'; f.frequency.value = 1800; env(g2, t, .35, .05);
+      n.connect(f).connect(g2).connect(ac.destination); n.start(t);
+      const o2 = ac.createOscillator(), g3 = ac.createGain(); o2.type = 'triangle'; o2.frequency.value = 523 * Math.pow(2, Math.min(combo, 14) / 12); env(g3, t + .03, .16, .12);
+      o2.connect(g3).connect(ac.destination); o2.start(t + .03); o2.stop(t + .16);
+    },
+    swipe(combo) {
+      const t = ac.currentTime, n = noise(.18), f = ac.createBiquadFilter(), g = ac.createGain();
+      f.type = 'bandpass'; f.Q.value = 1.2; f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(3200, t + .16); env(g, t, .45, .18);
+      n.connect(f).connect(g).connect(ac.destination); n.start(t);
+      const o2 = ac.createOscillator(), g3 = ac.createGain(); o2.type = 'triangle'; o2.frequency.value = 523 * Math.pow(2, Math.min(combo, 14) / 12); env(g3, t + .03, .13, .12);
+      o2.connect(g3).connect(ac.destination); o2.start(t + .03); o2.stop(t + .16);
+    },
+    miss() {
+      const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(140, t); o.frequency.linearRampToValueAtTime(70, t + .28); env(g, t, .3, .3);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + .31);
+    },
+    bell() {
+      const t = ac.currentTime; [880, 1320, 1760].forEach((fq, i) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = fq; env(g, t, .22 / (i + 1), 1.1); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 1.15); });
+    }
+  };
+  const play = (name, arg) => { if (muted || !ac) return; try { sfx[name](arg); } catch (e) {} };
+  const buzz = ms => { if (navigator.vibrate) navigator.vibrate(ms); };
+
+  /* ---------- 書類 ---------- */
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const refill = () => { queue.push(...shuffle([...GOOD.map(t => ({ t, good: true })), ...BAD.map(t => ({ t, good: false })), ...FATAL.map(f => ({ t: f.t, good: false, fatal: f }))])); };
+  const makePaper = () => {
+    if (queue.length < 2) refill();
+    const doc = queue.shift(), el = document.createElement('div');
+    el.className = 'paper next'; el.doc = doc;
+    el.style.setProperty('--r', (Math.random() * 5 - 2.5).toFixed(2) + 'deg');
+    el.innerHTML = `<div class="p-head"><span>総務部 御中</span><span>第 ${String(++serial + 100).padStart(4, '0')} 号</span></div>
+      <div class="p-title">稟議書</div><div class="p-rule"></div><div class="p-label">件名</div>
+      <div class="p-subject"></div><div class="p-lines"><i></i><i></i><i></i></div>
+      <div class="p-foot"><div class="p-cells"><span>担当</span><span>課長</span><span>部長</span></div></div>
+      <div class="reject">却下</div>`;
+    const cut = doc.t.indexOf('を') + 1, subj = el.querySelector('.p-subject');
+    [doc.t.slice(0, cut), doc.t.slice(cut)].forEach(part => { const sp = document.createElement('span'); sp.textContent = part; subj.append(sp); });
+    desk.prepend(el);
+    return el;
+  };
+  const promote = () => { cur = next; cur.classList.remove('next'); cur.classList.add('cur'); next = makePaper(); };
+  const buildStack = () => {
+    desk.innerHTML = ''; queue = []; serial = 0; refill();
+    // 致命的な案が毎回3〜10枚目のどこかに必ず1枚出るようにする
+    const at = queue.findIndex(d => d.fatal), to = 2 + (Math.random() * 8 | 0);
+    if (at > 9) [queue[at], queue[to]] = [queue[to], queue[at]];
+    else if (at < 2) { const far = queue.findIndex((d, i) => i > 1 && !d.fatal); [queue[at], queue[far]] = [queue[far], queue[at]]; const f2 = queue.findIndex(d => d.fatal); if (f2 > 9) [queue[f2], queue[to]] = [queue[to], queue[f2]]; }
+    next = makePaper(); promote();
+  };
+
+  /* ---------- 進行 ---------- */
+  const newStats = () => ({ total: 0, ok: 0, approved: 0, rejected: 0, combo: 0, maxCombo: 0, badApproved: [], goodRejected: [], fatal: [] });
+  const reset = () => {
+    stats = newStats();
+    countEl.firstChild.nodeValue = '0'; comboEl.className = ''; barFill.style.transform = 'scaleX(1)'; barFill.classList.remove('hurry');
+    buildStack(); state = 'ready';
+  };
+  const tick = () => {
+    const left = Math.max(0, 1 - (performance.now() - startAt) / TIME);
+    barFill.style.transform = `scaleX(${left})`;
+    barFill.classList.toggle('hurry', left < .3);
+    if (left <= 0) return finish();
+    raf = requestAnimationFrame(tick);
+  };
+  const floatText = (text, color, x, y) => {
+    const f = document.createElement('div'); f.className = 'float'; f.textContent = text; f.style.color = color; f.style.left = x + 'px'; f.style.top = y + 'px';
+    app.append(f); setTimeout(() => f.remove(), 620);
+  };
+  const judge = (approve, x, y) => {
+    if (state === 'ready') { state = 'play'; startAt = performance.now(); raf = requestAnimationFrame(tick); }
+    const doc = cur.doc, right = approve === doc.good;
+    stats.total++; approve ? stats.approved++ : stats.rejected++;
+    if (right) { stats.ok++; stats.combo++; stats.maxCombo = Math.max(stats.maxCombo, stats.combo); }
+    else { stats.combo = 0; (approve ? stats.badApproved : stats.goodRejected).push(doc.t); if (approve && doc.fatal) stats.fatal.push(doc); }
+    countEl.firstChild.nodeValue = stats.total; countEl.classList.remove('pop'); void countEl.offsetWidth; countEl.classList.add('pop');
+    comboEl.textContent = stats.combo >= 2 ? stats.combo + ' 連続！' : '';
+    comboEl.className = stats.combo >= 2 ? (stats.combo >= 5 ? 'on fever' : 'on') : '';
+    if (right) { play(approve ? 'stamp' : 'swipe', stats.combo); buzz(12); floatText(approve ? 'ナイス承認' : 'ナイス却下', '#f2c14e', x, y); }
+    else {
+      if (approve) play('stamp', 0); play('miss'); buzz([40, 30, 60]);
+      floatText(approve ? (doc.fatal ? '……え？' : '通しちゃった！') : 'それは良案！', '#ff8a7a', x, y);
+      app.classList.remove('shake'); $('flash').classList.remove('on'); void app.offsetWidth; app.classList.add('shake'); $('flash').classList.add('on');
+    }
+  };
+  const flyAway = (el, tx, ty, rot, delay) => {
+    el.classList.remove('cur', 'drag'); el.classList.add('fly');
+    setTimeout(() => { el.style.transform = `translate(${tx}, calc(-50% + ${ty})) rotate(${rot}deg)`; el.style.opacity = '0'; }, delay);
+    setTimeout(() => el.remove(), delay + 420);
+  };
+  const approve = (cx, cy) => {
+    const el = cur, r = el.getBoundingClientRect(), a = app.getBoundingClientRect();
+    const px = Math.min(Math.max(cx - r.left, r.width * .2), r.width * .8), py = Math.min(Math.max(cy - r.top, r.height * .2), r.height * .82);
+    const s = document.createElement('div'); s.className = 'stamp'; s.style.left = px + 'px'; s.style.top = py + 'px';
+    s.style.setProperty('--sr', (Math.random() * 30 - 15).toFixed(1) + 'deg');
+    s.innerHTML = `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="#d3281c" stroke-width="5"/><text x="50" y="43" text-anchor="middle" font-size="27" font-weight="800" fill="#d3281c" font-family="Hiragino Mincho ProN, Yu Mincho, serif">承</text><text x="50" y="74" text-anchor="middle" font-size="27" font-weight="800" fill="#d3281c" font-family="Hiragino Mincho ProN, Yu Mincho, serif">認</text></svg>`;
+    el.append(s);
+    judge(true, cx - a.left, cy - a.top - 40);
+    flyAway(el, '40%', '-150vh', 14, 110);
+    promote();
+  };
+  const reject = (dir, cx, cy) => {
+    const el = cur, a = app.getBoundingClientRect();
+    el.querySelector('.reject').style.opacity = '1';
+    judge(false, cx - a.left, cy - a.top - 40);
+    flyAway(el, dir * 160 + '%', '-6vh', dir * 24, 0);
+    promote();
+  };
+  const finish = () => {
+    state = 'over'; cancelAnimationFrame(raf); barFill.style.transform = 'scaleX(0)';
+    play('bell'); buzz(120);
+    const b = $('banner'); b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
+    setTimeout(showResult, 950);
+  };
+  const verdict = () => {
+    const s = stats, wrong = s.total - s.ok, bad = s.badApproved.length, rej = s.goodRejected.length, pct = s.total ? Math.round(s.ok / s.total * 100) : 0;
+    const sp = (rank, say) => ({ rank, say, fatal: false });
+    if (s.fatal.length) return { rank: s.fatal[0].fatal.rank, say: `「${s.fatal[0].t}」を承認。${s.fatal[0].fatal.say}`, fatal: true };
+    if (!s.total) return sp('置物', '1枚も決裁しませんでした。');
+    if (s.total >= 4 && !s.ok) return sp('逆張りの天才', 'すべての判断が逆でした。');
+    if (s.total >= 5 && !s.rejected) return sp('イエスマン', '来た書類をすべて承認しました。');
+    if (s.total >= 5 && !s.approved) return sp('却下マシーン', '来た書類をすべて却下しました。');
+    if (!wrong) {
+      if (s.total >= 20) return sp('ハンコの神', `${s.total}枚をノーミスでさばきました。`);
+      if (s.total >= 14) return sp('伝説の部長', `${s.total}枚をノーミスでさばきました。`);
+      if (s.total >= 8) return sp('完璧主義者', `${s.total}枚、ひとつも間違えませんでした。`);
+      if (s.total >= 5) return sp('手堅い人', 'ノーミスですが、もっと速くできます。');
+      return sp('石橋を叩く人', 'ノーミスですが、遅すぎます。');
+    }
+    if (bad >= 5) return sp('ブラック部長', `ヤバい案を${bad}枚も通しました。`);
+    if (rej >= 5) return sp('社員の敵', `良い案を${rej}枚もつぶしました。`);
+    if (s.total >= 20 && pct < 60) return sp('暴走ハンコ', '速いけれど、ほぼ読んでいません。');
+    if (bad >= 3 && rej >= 3) return sp('あまのじゃく', '良い案をつぶし、ヤバい案を通しました。');
+    if (s.total <= 3) return sp('給料泥棒', `10秒で${s.total}枚しか見ていません。`);
+    const net = s.ok - wrong * 2, base = RANKS.find(r => net < r[0])[1];
+    const pre = s.total >= 18 ? '爆速の' : s.total >= 13 ? 'てきぱき' : s.total >= 8 ? '' : 'のんびり';
+    return sp(pre + base, `${s.total}枚中${s.ok}枚が正しい判断でした。`);
+  };
+  const worstList = () => {
+    if (stats.badApproved.length) {
+      const f = stats.fatal.map(d => d.t);
+      return { title: f.length ? '取り返しのつかない決裁' : 'あなたが通した最悪の案', kind: 'bad', mark: '承認', items: [...f, ...stats.badApproved.filter(t => !f.includes(t))].slice(0, 3) };
+    }
+    if (stats.goodRejected.length) return { title: 'あなたがつぶした良案', kind: 'rej', mark: '却下', items: stats.goodRejected.slice(0, 3) };
+    return { items: [] };
+  };
+  const showResult = () => {
+    const v = stats.verdict = verdict(), card = $('result').querySelector('.card');
+    card.classList.toggle('fatal', v.fatal);
+    $('rLabel').textContent = v.fatal ? '致命的な決裁' : 'あなたの決裁力';
+    const r = $('rRank'); r.textContent = v.rank; r.style.fontSize = Math.min(42, 250 / v.rank.length) + 'px';
+    $('rSay').textContent = v.say;
+    $('rTotal').textContent = stats.total; $('rOk').textContent = stats.ok; $('rCombo').textContent = stats.maxCombo;
+    const w = $('rWorst'), l = worstList(); w.innerHTML = ''; w.className = 'r-worst ' + (l.kind || '');
+    if (l.items.length) {
+      const h = document.createElement('h3'); h.textContent = l.title; const ul = document.createElement('ul');
+      l.items.forEach(t => { const li = document.createElement('li'); li.textContent = t; li.dataset.mark = l.mark; ul.append(li); });
+      w.append(h, ul);
+    } else {
+      const p = document.createElement('div'); p.className = 'r-clean';
+      p.textContent = stats.total ? 'ひとつも間違えませんでした。' : '書類は手つかずです。';
+      w.append(p);
+    }
+    $('result').classList.remove('hide');
+  };
+
+  /* ---------- 操作 ---------- */
+  let ptr = null;
+  desk.addEventListener('pointerdown', e => {
+    if (state !== 'ready' && state !== 'play') return;
+    audio(); ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, el: cur };
+    desk.setPointerCapture(e.pointerId);
+  });
+  desk.addEventListener('pointermove', e => {
+    if (!ptr || e.pointerId !== ptr.id || ptr.el !== cur) return;
+    ptr.dx = e.clientX - ptr.x;
+    if (Math.abs(ptr.dx) > 8) {
+      cur.classList.add('drag');
+      cur.style.transform = `translate(${ptr.dx}px, -50%) rotate(${ptr.dx / 14}deg)`;
+      cur.querySelector('.reject').style.opacity = Math.min(1, Math.abs(ptr.dx) / 70);
+    }
+  });
+  const release = e => {
+    if (!ptr || e.pointerId !== ptr.id) return;
+    const p = ptr; ptr = null;
+    if (p.el !== cur || (state !== 'ready' && state !== 'play')) return;
+    if (Math.abs(p.dx) > 55) return reject(Math.sign(p.dx), e.clientX, e.clientY);
+    if (Math.abs(p.dx) > 8) { cur.classList.remove('drag'); cur.style.transform = ''; cur.querySelector('.reject').style.opacity = 0; if (Math.abs(p.dx) > 16) return; }
+    approve(e.clientX, e.clientY);
+  };
+  desk.addEventListener('pointerup', release);
+  desk.addEventListener('pointercancel', e => { if (ptr && cur) { cur.classList.remove('drag'); cur.style.transform = ''; cur.querySelector('.reject').style.opacity = 0; } ptr = null; });
+  addEventListener('keydown', e => {
+    if (state !== 'ready' && state !== 'play') return;
+    const r = cur.getBoundingClientRect(), cx = r.left + r.width * .5, cy = r.top + r.height * .6;
+    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowUp') { e.preventDefault(); audio(); approve(cx + (Math.random() * 60 - 30), cy + (Math.random() * 60 - 30)); }
+    else if (e.code === 'ArrowLeft') { audio(); reject(-1, cx, cy); }
+    else if (e.code === 'ArrowRight') { audio(); reject(1, cx, cy); }
+  });
+
+  $('go').addEventListener('click', () => { audio(); $('start').classList.add('hide'); reset(); });
+  $('again').addEventListener('click', () => { audio(); $('result').classList.add('hide'); reset(); });
+  $('mute').addEventListener('click', () => { muted = !muted; $('mute').textContent = muted ? '×' : '♪'; });
+  const toast = t => { const el = $('toast'); el.textContent = t; el.classList.add('on'); setTimeout(() => el.classList.remove('on'), 1600); };
+  /* ---------- シェア用の画像 ---------- */
+  const drawShareImage = () => {
+    const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d'), MIN = '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif', GO = '"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif';
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#1d5a48'); g.addColorStop(1, '#123c30'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.strokeStyle = 'rgba(255,255,255,.07)'; x.lineWidth = 2;
+    for (let i = 0; i <= W; i += 60) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); }
+    for (let i = 0; i <= H; i += 60) { x.beginPath(); x.moveTo(0, i); x.lineTo(W, i); x.stroke(); }
+    x.save(); x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 50; x.shadowOffsetY = 24; x.fillStyle = '#fbfaf4'; x.fillRect(90, 100, 900, 1150); x.restore();
+    x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+    // 見出し
+    x.font = `800 56px ${MIN}`; const w1 = x.measureText('10秒').width, w2 = x.measureText('決裁').width, sx = 540 - (w1 + w2) / 2;
+    x.textAlign = 'left'; x.fillStyle = '#23211d'; x.fillText('10秒', sx, 200); x.fillStyle = '#d3281c'; x.fillText('決裁', sx + w1, 200);
+    x.textAlign = 'center'; x.fillStyle = '#23211d'; x.fillRect(150, 230, 780, 3); x.fillRect(150, 238, 780, 1);
+    const v = stats.verdict || verdict(), l = worstList(), RED = '#d3281c', BLUE = '#2b4c8c', mc = l.kind === 'rej' ? BLUE : RED;
+    x.fillStyle = v.fatal ? RED : '#8d8a80'; x.font = `${v.fatal ? 800 : 400} 34px ${MIN}`; x.fillText(v.fatal ? '致 命 的 な 決 裁' : 'あ な た の 決 裁 力', 540, 315);
+    let rs = 132; x.font = `800 ${rs}px ${MIN}`; while (x.measureText(v.rank).width > 760 && rs > 50) { rs -= 4; x.font = `800 ${rs}px ${MIN}`; }
+    x.fillStyle = v.fatal ? RED : '#23211d'; x.fillText(v.rank, 540, 450);
+    let ss = 30; x.font = `700 ${ss}px ${GO}`; while (x.measureText(v.say).width > 780 && ss > 20) { ss -= 1; x.font = `700 ${ss}px ${GO}`; }
+    x.fillStyle = v.fatal ? '#23211d' : '#8d8a80'; x.fillText(v.say, 540, 508);
+    // 数字
+    x.fillStyle = '#d9d5c8'; x.fillRect(150, 545, 780, 2); x.fillRect(150, 735, 780, 2); x.fillRect(410, 545, 2, 190); x.fillRect(670, 545, 2, 190);
+    [[stats.total, 'さばいた枚数'], [stats.ok, '正しい判断'], [stats.maxCombo, '最大連続']].forEach(([n, lb], i) => {
+      const cx = 280 + i * 260; x.fillStyle = '#23211d'; x.font = `800 92px ${GO}`; x.fillText(n, cx, 660); x.fillStyle = '#8d8a80'; x.font = `400 28px ${MIN}`; x.fillText(lb, cx, 710);
+    });
+    // 通した最悪の案／つぶした良案
+    if (l.items.length) {
+      x.textAlign = 'left'; x.fillStyle = mc; x.font = `800 34px ${GO}`; x.fillText(l.title, 150, 810);
+      l.items.forEach((t, i) => {
+        const y = 838 + i * 122; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(150, y, 780, 104); x.strokeStyle = '#d9d5c8'; x.lineWidth = 2; x.strokeRect(150, y, 780, 104);
+        x.fillStyle = '#23211d'; x.textAlign = 'left'; let fs = 50; x.font = `800 ${fs}px ${MIN}`; while (x.measureText(t).width > 610 && fs > 30) { fs -= 2; x.font = `800 ${fs}px ${MIN}`; } x.fillText(t, 180, y + 70);
+        x.save(); x.translate(868, y + 52); x.rotate(-.21); x.strokeStyle = mc; x.fillStyle = mc; x.lineWidth = 5; x.globalAlpha = .9;
+        x.beginPath(); if (l.kind === 'rej') x.rect(-42, -34, 84, 68); else x.arc(0, 0, 42, 0, Math.PI * 2); x.stroke(); x.textAlign = 'center'; x.font = `800 26px ${MIN}`; x.fillText(l.mark, 0, 10); x.restore();
+      });
+    } else {
+      x.textAlign = 'center'; x.fillStyle = '#23211d'; x.font = `800 50px ${MIN}`;
+      x.fillText(stats.total ? 'ひとつも' : '書類は', 540, 920); x.fillText(stats.total ? '間違えませんでした。' : '手つかずです。', 540, 995);
+    }
+    x.textAlign = 'center'; x.fillStyle = '#fff'; x.globalAlpha = .85; x.font = `700 34px ${GO}`; x.fillText('#10秒決裁', 540, 1310); x.globalAlpha = 1;
+    return c;
+  };
+  $('share').addEventListener('click', async () => {
+    const v = stats.verdict || verdict(), l = worstList();
+    let text = `10秒決裁の結果は【${v.rank}】。${v.say}`;
+    if (l.items.length && !v.fatal) text += `「${l.items[0]}」を${l.mark}してしまった。`;
+    text += ' #10秒決裁 https://shikumake.github.io/10byo-kessai/';
+    try {
+      const blob = await new Promise(r => drawShareImage().toBlob(r, 'image/png'));
+      const file = new File([blob], '10byo-kessai.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) return await navigator.share({ files: [file], text });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      try { await navigator.clipboard.writeText(text); toast('画像を保存し、文をコピーしました'); } catch (e) { toast('画像を保存しました'); }
+    } catch (e) {}
+  });
+
+  // タイトルの後ろに書類を見せておく
+  stats = newStats();
+  buildStack();
+})();
+</script>
+</body>
+</html>
