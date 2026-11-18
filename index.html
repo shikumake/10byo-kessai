@@ -253,7 +253,8 @@
     { t: '社名をうんこにする', rank: 'うんこ(株)部長', say: '名刺を刷り直してください。' },
     { t: '機密を全部公開する', rank: '情報漏えい', say: 'ニュースになりました。' }
   ];
-  const RANKS = [[3,'研修生'],[6,'平社員'],[9,'主任'],[12,'係長'],[15,'課長'],[18,'部長'],[22,'専務'],[Infinity,'社長']];
+  // 役職は正解率（%）で決まり、速さの言葉（爆速の・てきぱき・のんびり）は枚数で決まる
+  const RANKS = [[35,'研修生'],[50,'平社員'],[60,'主任'],[70,'係長'],[78,'課長'],[84,'部長'],[90,'専務'],[Infinity,'社長']];
 
   const $ = id => document.getElementById(id);
   const app = $('app'), desk = $('desk'), barFill = $('barFill'), countEl = $('count'), comboEl = $('combo');
@@ -387,8 +388,10 @@
   };
   const verdict = (s = stats) => {
     const wrong = s.total - s.ok, bad = s.badApproved.length, rej = s.goodRejected.length, pct = s.total ? Math.round(s.ok / s.total * 100) : 0;
-    const sp = (rank, say) => ({ rank, say, fatal: false });
-    if (s.fatal.length) return { rank: s.fatal[0].fatal.rank, say: `「${s.fatal[0].t}」を承認。${s.fatal[0].fatal.say}`, fatal: true };
+    const SP = ['置物','逆張りの天才','イエスマン','却下マシーン','ハンコの神','伝説の部長','完璧主義者','手堅い人','石橋を叩く人','ブラック部長','社員の敵','暴走ハンコ','あまのじゃく','給料泥棒'];
+    // id はシェア用カード（r/<id>.html）の名前。tools/make_cards.py の並びと合わせる
+    const sp = (rank, say) => ({ rank, say, fatal: false, id: 's' + (SP.indexOf(rank) + 1) });
+    if (s.fatal.length) return { rank: s.fatal[0].fatal.rank, say: `「${s.fatal[0].t}」を承認。${s.fatal[0].fatal.say}`, fatal: true, id: 'f' + (FATAL.indexOf(s.fatal[0].fatal) + 1) };
     if (!s.total) return sp('置物', '1枚も決裁しませんでした。');
     if (s.total >= 4 && !s.ok) return sp('逆張りの天才', 'すべての判断が逆でした。');
     if (s.total >= 5 && !s.rejected) return sp('イエスマン', '来た書類をすべて承認しました。');
@@ -400,14 +403,14 @@
       if (s.total >= 5) return sp('手堅い人', 'ノーミスですが、もっと速くできます。');
       return sp('石橋を叩く人', 'ノーミスですが、遅すぎます。');
     }
+    if (s.total >= 20 && pct < 60) return sp('暴走ハンコ', '速いけれど、ほぼ読んでいません。');
     if (bad >= 5) return sp('ブラック部長', `ヤバい案を${bad}枚も通しました。`);
     if (rej >= 5) return sp('社員の敵', `良い案を${rej}枚もつぶしました。`);
-    if (s.total >= 20 && pct < 60) return sp('暴走ハンコ', '速いけれど、ほぼ読んでいません。');
     if (bad >= 3 && rej >= 3) return sp('あまのじゃく', '良い案をつぶし、ヤバい案を通しました。');
     if (s.total <= 3) return sp('給料泥棒', `10秒で${s.total}枚しか見ていません。`);
-    const net = s.ok - wrong * 2, base = RANKS.find(r => net < r[0])[1];
-    const pre = s.total >= 18 ? '爆速の' : s.total >= 13 ? 'てきぱき' : s.total >= 8 ? '' : 'のんびり';
-    return sp(pre + base, `${s.total}枚中${s.ok}枚が正しい判断でした。`);
+    const ri = RANKS.findIndex(r => pct < r[0]);
+    const pi = s.total >= 18 ? 0 : s.total >= 13 ? 1 : s.total >= 8 ? 2 : 3;
+    return { rank: ['爆速の', 'てきぱき', '', 'のんびり'][pi] + RANKS[ri][1], say: `${s.total}枚中${s.ok}枚が正しい判断でした。`, fatal: false, id: 'l' + pi + ri };
   };
   const worstList = () => {
     if (stats.badApproved.length) {
@@ -490,7 +493,7 @@
   const shareUrl = () => {
     const v = stats.verdict || verdict();
     const text = `10秒決裁の結果は【${v.rank}】。${v.say}\nあなたは何になる？ #10秒決裁`;
-    return 'https://x.com/intent/post?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(BASE + '?c=' + encodeResult());
+    return 'https://x.com/intent/post?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(BASE + 'r/' + v.id + '.html?c=' + encodeResult());
   };
   $('share').addEventListener('click', () => { const url = shareUrl(); if (!window.open(url, '_blank')) location.href = url; });
   try { rival = decodeResult(new URLSearchParams(location.search).get('c')); } catch (e) {}
